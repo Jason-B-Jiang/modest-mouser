@@ -7,15 +7,16 @@ import pandas as pd
 ################################################################################
 
 ## Global variables
-## TODO - replace some indicators with regex patterns, or use a spaCy matcher?
 ALTERNATE_SONG_INDICATORS = ('(Live ', 'Modest Mouse - ', '(album version)',
                              '(BBC Radio ', '[Live]', '(Aborted)', '(radio edit)',
-                             '(live studio session)')
+                             '(live studio session)', '(1995 Demo)', '(live ')
 
 DUPLICATE_SONGS = ('The ionizes & atomize',
                    'Whenever I Breathe Out (Positive/Negative)',
                    'Styrofoam Boots',
-                   'Styrofoam Boots (intro)')
+                   'Styrofoam Boots (intro)',
+                   'Sleepwalking (Couples Only Dance Prom Night)',
+                   'Sleepwalkin’', 'I Came as a Rat (Long Walk Off a Short Dock)')
 
 ################################################################################
 
@@ -28,7 +29,30 @@ def main() -> None:
     with open('../access_token', 'r') as f:
         token = f.readlines()[0].strip()
 
-    if not exists('../data/modest_mouse_lyrics.csv'):
+    # dataframe of modest mouse songs and their lyrics
+    songs_df = get_modest_mouse_lyrics(token)
+
+    songs_df.to_csv('../data/modest_mouse_lyrics_filtered.csv')
+    
+################################################################################
+
+## Helper functions
+
+def get_modest_mouse_lyrics(token: str) -> pd.core.frame.DataFrame:
+    """Use Genius API key, token, to retrieve all Modest Mouse song lyrics.
+
+    Filter out duplicate songs, songs that correspond to live performances/demos
+    (as their album versions already have lyrics) and songs without lyrics.
+
+    Args:
+        token (:obj:`str`): API access key for Genius
+    
+    Return:
+        Pandas dataframe, with song names + song lyrics as columns
+    """
+    # haven't already scraped modest mouse lyrics with LyricsGenius yet, so do
+    # that
+    if not exists('../data/modest_mouse_lyrics_unfiltered.csv'):
         genius = lyricsgenius.Genius(token)
         artist = genius.search_artist('Modest Mouse')
         song_titles = [song.title for song in artist.songs]
@@ -36,35 +60,44 @@ def main() -> None:
         
         songs_df = pd.DataFrame(list(zip(song_titles, song_lyrics)),
                                 columns = ['title', 'lyrics'])
-        songs_df.to_csv('../data/modest_mouse_lyrics.csv')
+
+        # write csv of all song lyrics scraped from genius
+        songs_df.to_csv('../data/modest_mouse_lyrics_unfiltered.csv')
 
     else:
         songs_df = pd.read_csv('../data/modest_mouse_lyrics.csv')
 
-    # stuff to clean:
-    # 1) remove song title header from all lyrics
-    # 2) remove verse, chorus, etc indicators
-    # 3) remove trailing '{numbers}embed' at end of all lyrics
-    # 4) remove duplicate songs (demos, live performances, etc)
-    # 5) instrumentals (ex: Interlude (Milo))
-    
+    # remove duplicate/live song lyrics, as well as songs without lyrics
+    songs_df = songs_df[songs_df['lyrics'].notnull()]
+    songs_df = \
+        songs_df[~songs_df.apply(
+            is_alternate_or_duplicate_song, axis=1
+        )]
 
-################################################################################
+    # format song lyrics by removing irrelevant text (ex: song name, excess
+    # newlines, etc
+    songs_df = 
 
-## Helper functions
 
-def is_alternate_or_duplicate_song(title: str) -> bool:
-    """Return True if the lyrics for some song title are a duplicated entry in
-    Genius, or it's lyrics for a live performance/demo.
+
+def is_alternate_or_duplicate_song(row: pd.core.series.Series) -> bool:
+    """Return True if the song title in some row indicates that it is an
+    alternate version of a song (ex: demo, live performance) or duplicate.
     
     Args:
-        title (:obj:`str`): title of the song
+        row (:obj:`pandas.core.series.Series`): row from songs_df dataframe
     """
-    return any([indicator in title for indicator in ALTERNATE_SONG_INDICATORS]) or \
-        any([title == dup for dup in DUPLICATE_SONGS])
+    return any([s in row['title'] for s in ALTERNATE_SONG_INDICATORS]) or \
+        any([row['title'] == s for s in DUPLICATE_SONGS])
 
 
 def clean_song_lyrics(lyrics: str) -> str:
+    # string patterns to remove from lyrics
+    # ^.+Lyrics
+    # [0-9]*Embed$
+    # \[.+?\] (use non-greedy/lazy match)
+    # leading/trailing newlines
+    # excess newlines (ex: >= 2 consecutive newlines)
     pass
 
 ################################################################################
