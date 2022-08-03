@@ -4,13 +4,14 @@ import lyricsgenius
 from os.path import exists
 import pandas as pd
 import re
+from typing import List
 
 ################################################################################
 
 ## Global variables
-ALTERNATE_SONG_INDICATORS = ('(Live ', 'Modest Mouse - ', '(album version)',
-                             '(BBC Radio ', '[Live]', '(Aborted)', '(radio edit)',
-                             '(live studio session)', '(1995 Demo)', '(live ')
+ALTERNATE_SONG_INDICATORS = ('(Live', 'Modest Mouse - ', '(album version)',
+                             '(BBC', '[Live]', '(Aborted)', '(radio edit)',
+                             '(live studio session)', '(1995 Demo)', '(live')
 
 DUPLICATE_SONGS = ('The ionizes & atomize', 'Third Planet',
                    'Whenever I Breathe Out (Positive/Negative)',
@@ -58,27 +59,19 @@ def get_modest_mouse_lyrics(token: str) -> pd.core.frame.DataFrame:
     # that
     genius = lyricsgenius.Genius(token)
     artist = genius.search_artist('Modest Mouse')
-    song_titles = [song.title for song in artist.songs]
-    song_lyrics = [song.lyrics for song in artist.songs]
+    songs = {song.title: get_lyric_pairs(song.lyrics) for song in artist.songs \
+        if not is_alternate_or_duplicate_song(song.title)}
+
+    # create lists of song titles + all pairs of consecutive song lyric lines
+    # for each song
+    song_titles = []
+    lyric_pairs = []
+    for song in songs:
+          song_titles.extend([song] * len(songs[song]))
+          [lyric_pairs.extend(songs[song])]
         
-    songs_df = pd.DataFrame(list(zip(song_titles, song_lyrics)),
-                            columns = ['title', 'lyrics'])
-
-    # Flag duplicate/live song lyrics, and remove songs without lyrics
-    songs_df = songs_df[songs_df['lyrics'].notnull()]
-    songs_df = songs_df.assign(
-        is_alternate_or_duplicate_song = lambda df: df['title'].map(
-            lambda s: is_alternate_or_duplicate_song(s)
-        )
-    )
-
-    # format song lyrics by removing irrelevant text (ex: song name, excess
-    # newlines, etc
-    songs_df = songs_df.assign(
-        lyrics_formatted = lambda df: df['lyrics'].map(
-            lambda s: format_song_lyrics(s)
-        )
-    )
+    songs_df = pd.DataFrame(list(zip(song_titles, lyric_pairs)),
+                            columns = ['song_title', 'lyric_pair'])
 
     return songs_df
 
@@ -92,6 +85,29 @@ def is_alternate_or_duplicate_song(title: str) -> bool:
     """
     return any([s in title for s in ALTERNATE_SONG_INDICATORS]) or \
         any([title == s for s in DUPLICATE_SONGS])
+
+
+def get_lyric_pairs(lyrics: str) -> List[str]:
+    """Return all pairs of consecutive lyric lines from a song, where each pair
+    is a ' || ' separated string of 2 lyric lines.
+    
+    Args:
+        lyrics (:obj:`str`): lyrics for some Modest Mouse song, scraped from
+        Genius.
+    """
+    lyrics = [l for l in format_song_lyrics(lyrics).split('\n') \
+        if l not in (' ', '')]
+
+    lyric_pairs = []
+    for i in range(len(lyrics) - 1):
+        # remove parentheses and square brackets that may be enclosing lyrics
+        # ex: "(It was hanging out by itself)" -> "It was hanging out by itself"
+        lyric_pairs.append(
+            re.sub(r'(\(|\)|\[|\])', '', lyrics[i]) + ' || ' + \
+                re.sub(r'(\(|\)|\[|\])', '', lyrics[i + 1])
+            )
+    
+    return lyric_pairs
 
 
 def format_song_lyrics(lyrics: str) -> str:
