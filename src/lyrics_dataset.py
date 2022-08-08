@@ -4,8 +4,12 @@ import torch
 import spacy
 import pandas as pd
 from typing import List, Tuple
+from random import seed, shuffle
+from torch.nn.utils.rnn import pad_sequence
 
 ################################################################################
+
+seed(42)
 
 class LyricsDataset(torch.utils.data.Dataset):
     """Create a PyTorch dataset for Modest Mouse lyric pairs, where each item
@@ -46,8 +50,9 @@ class LyricsDataset(torch.utils.data.Dataset):
         return set([tok.text for tok in self._tokens])
 
 
-    def _get_lyric_pairs(self) -> Tuple[List[int], List[int]]:
-        """Return a tuple of the word indices of all words in a pair of lyrics.
+    def _get_lyric_pairs(self) -> List[Tuple[List[int], List[int]]]:
+        """Return a List of tuples of the word indices of all words in a pair
+        of lyrics.
         """
         return [(self._convert_to_idx(line_1), self._convert_to_idx(line_2)) for line_1, line_2 \
             in self._lyrics['lyric_pair'].str.lower().str.split(' \|\| ')]
@@ -66,6 +71,12 @@ class LyricsDataset(torch.utils.data.Dataset):
         return len(self._unique_tokens)
 
 
+    def shuffle_dataset(self) -> None:
+        """Randomly shuffle contents in this dataset.
+        """
+        shuffle(self._lyric_pairs)
+
+
     def __len__(self) -> int:
         """Return number of lyric pairs in the dataset.
         """
@@ -75,5 +86,12 @@ class LyricsDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Return the i-th pair of modest mouse song lyrics to use as a
         training/testing example.
+
+        Pad lyrics tensors so they are of the same length.
         """
-        return self._lyric_pairs[idx][0], self._lyric_pairs[idx][1]
+        padded_lyrics = pad_sequence(
+            [torch.tensor(self._lyric_pairs[idx][0]),
+            torch.tensor(self._lyric_pairs[idx][1])]
+        )
+
+        return padded_lyrics[:,0], padded_lyrics[:,1]
